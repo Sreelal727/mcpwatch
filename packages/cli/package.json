@@ -1,6 +1,9 @@
 {
-  "name": "mcpwatch",
-  "version": "0.0.1",
+  "name": "@sreelal727/mcpwatch",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Flight recorder for AI agents — a transparent proxy that records every MCP tool call, with a local dashboard. All local, zero config.",
   "license": "MIT",
   "type": "module",
@@ -37,7 +40,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepack": "node -e \"const fs=require('fs');fs.copyFileSync('../../README.md','README.md');fs.copyFileSync('../../LICENSE','LICENSE')\""
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0"

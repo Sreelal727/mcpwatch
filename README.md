@@ -10,6 +10,7 @@ with a local dashboard to watch it live.
 
 *One command. All local. Zero config.*
 
+[![npm](https://img.shields.io/npm/v/%40sreelal727%2Fmcpwatch?label=npm&color=cb3837)](https://www.npmjs.com/package/@sreelal727/mcpwatch)
 [![CI](https://github.com/Sreelal727/mcpwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/Sreelal727/mcpwatch/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥ 22](https://img.shields.io/badge/node-%E2%89%A522-brightgreen.svg)](package.json)
@@ -29,16 +30,18 @@ and turns it into something you can actually read.
 ## Quick start
 
 ```
-npx mcpwatch init
+npx @sreelal727/mcpwatch init
 ```
 
 That's it — every stdio MCP server in your Claude Code, Cursor, and Claude Desktop
 configs now runs through the recording proxy (with timestamped backups, fully reversible
-with `npx mcpwatch unwrap`). Restart your client, use your agent normally, then:
+with `npx @sreelal727/mcpwatch unwrap`). Restart your client, use your agent normally, then:
 
 ```
-npx mcpwatch ui
+npx @sreelal727/mcpwatch ui
 ```
+
+(Install once with `npm i -g @sreelal727/mcpwatch` and every command is just `mcpwatch …`.)
 
 …and watch your agent work, live: every session, every tool call, every request and
 response, with status and latency. All of it stored in a SQLite file in your home
