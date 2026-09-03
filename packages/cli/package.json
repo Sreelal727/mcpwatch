@@ -6,11 +6,11 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mcpwatch/mcpwatch.git"
+    "url": "git+https://github.com/Sreelal727/mcpwatch.git"
   },
-  "homepage": "https://github.com/mcpwatch/mcpwatch#readme",
+  "homepage": "https://github.com/Sreelal727/mcpwatch#readme",
   "bugs": {
-    "url": "https://github.com/mcpwatch/mcpwatch/issues"
+    "url": "https://github.com/Sreelal727/mcpwatch/issues"
   },
   "engines": {
     "node": ">=20"

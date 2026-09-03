@@ -10,6 +10,11 @@ with a local dashboard to watch it live.
 
 *One command. All local. Zero config.*
 
+[![CI](https://github.com/Sreelal727/mcpwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/Sreelal727/mcpwatch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](package.json)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 <!-- demo.gif goes here before launch: record with scripts/seed-demo.ts --keep-running + mcpwatch ui -->
 
 </div>

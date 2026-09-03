@@ -14,7 +14,7 @@ import { createHttpProxy } from "./proxy/httpProxy.js";
 import { Redactor } from "./proxy/redact.js";
 import { createUiServer } from "./server/ui.js";
 
-const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/mcpwatch)
+const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/Sreelal727/mcpwatch)
 
 Usage:
   mcpwatch init [--dry-run]

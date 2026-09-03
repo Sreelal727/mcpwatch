@@ -123,7 +123,7 @@ footer a{color:#4da3ff;text-decoration:none}
 <div class="stats"><b>${calls.length}</b> calls · <b>${errors}</b> errors · started ${esc(new Date(Number(session.started_at)).toISOString())} · session <span class="mono">${esc(session.id)}</span></div>
 ${callBlocks}
 ${garbageBlock}
-<footer>Recorded with <a href="https://github.com/mcpwatch/mcpwatch">mcpwatch</a> — the flight recorder for AI agents.</footer>
+<footer>Recorded with <a href="https://github.com/Sreelal727/mcpwatch">mcpwatch</a> — the flight recorder for AI agents.</footer>
 </body>
 </html>
 `;

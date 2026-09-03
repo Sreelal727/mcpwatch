@@ -6,7 +6,7 @@ welcome — bug reports, docs fixes, features, design feedback.
 ## Getting started
 
 ```
-git clone https://github.com/mcpwatch/mcpwatch
+git clone https://github.com/Sreelal727/mcpwatch
 cd mcpwatch
 npm install
 npm run build
@@ -50,7 +50,7 @@ reason.
 5. Describe *why*, not just what.
 
 Not sure where to start? Look for
-[`good first issue`](https://github.com/mcpwatch/mcpwatch/labels/good%20first%20issue)
+[`good first issue`](https://github.com/Sreelal727/mcpwatch/labels/good%20first%20issue)
 or open a discussion — happy to help you scope something.
 
 ## Reporting bugs
