@@ -88,6 +88,12 @@ describe("proxy e2e", () => {
     const slowResult = await client.callTool({ name: "slow", arguments: {} });
     expect(slowResult.isError ?? false).toBe(false);
 
+    // A secret passing through must be redacted in the STORED copy while the
+    // live protocol result still carries it untouched.
+    const secret = "sk-abcdefghijklmnop1234567890";
+    const leaked = await client.callTool({ name: "echo", arguments: { msg: `key ${secret}` } });
+    expect(JSON.stringify(leaked.content)).toContain(secret);
+
     // Capture writes happen synchronously as frames arrive, so by the time the
     // client has each response, the paired call must already be recorded.
     const store = new Store(dbPath);
@@ -121,11 +127,16 @@ describe("proxy e2e", () => {
       expect(Number(slow?.duration_ms)).toBeGreaterThanOrEqual(100);
 
       const frames = store.db
-        .prepare(`SELECT direction, kind FROM frames WHERE session_id = ?`)
-        .all(session.id) as Array<{ direction: string; kind: string }>;
+        .prepare(`SELECT direction, kind, raw, redacted FROM frames WHERE session_id = ?`)
+        .all(session.id) as Array<{ direction: string; kind: string; raw: string; redacted: number }>;
       expect(frames.some((f) => f.direction === "c2s" && f.kind === "request")).toBe(true);
       expect(frames.some((f) => f.direction === "s2c" && f.kind === "response")).toBe(true);
       expect(frames.some((f) => f.kind === "notification")).toBe(true);
+
+      const secret = "sk-abcdefghijklmnop1234567890";
+      expect(frames.some((f) => f.raw.includes(secret))).toBe(false);
+      expect(frames.filter((f) => f.raw.includes("[REDACTED:api-key]")).length).toBeGreaterThanOrEqual(2);
+      expect(frames.some((f) => f.redacted > 0)).toBe(true);
     } finally {
       store.close();
     }

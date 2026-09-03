@@ -4,11 +4,14 @@ import path from "node:path";
 import { runProxy } from "./proxy/proxy.js";
 import { Store, defaultDbPath } from "./store/store.js";
 import { spawn } from "node:child_process";
+import { renderSessionHtml } from "./export/exportHtml.js";
 import {
   instrumentInit,
   instrumentStatus,
   instrumentUnwrap,
 } from "./instrument/instrument.js";
+import { createHttpProxy } from "./proxy/httpProxy.js";
+import { Redactor } from "./proxy/redact.js";
 import { createUiServer } from "./server/ui.js";
 
 const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/mcpwatch)
@@ -30,9 +33,20 @@ Usage:
       Open the local dashboard (default http://127.0.0.1:4680). Local-only:
       the server binds 127.0.0.1 and your data never leaves this machine.
 
-  mcpwatch run [--name <server>] [--db <path>] -- <command> [args...]
+  mcpwatch run [--name <server>] [--db <path>] [--no-redact] -- <command> [args...]
       Run one MCP stdio server through the recording proxy directly.
       Everything after "--" is the real server command.
+
+  mcpwatch http <target-url> [--port <n>] [--name <server>] [--db <path>] [--no-redact]
+      Recording reverse proxy for a Streamable HTTP MCP server: point your
+      client at http://127.0.0.1:<port> (default 4681) instead of the target.
+
+  mcpwatch export <session-id> [--out <file>] [--db <path>]
+      Export one session as a single self-contained HTML file (shareable
+      bug report). <session-id> may be a unique prefix.
+
+  mcpwatch gc [--keep-days <n>] [--keep-sessions <n>] [--db <path>]
+      Delete old sessions (default: keep 30 days) and compact the database.
 
   mcpwatch sessions [--json] [--db <path>] [--limit <n>]
       List recorded sessions.
@@ -43,6 +57,8 @@ Usage:
   mcpwatch --version | --help
 
 Data lives in ~/.mcpwatch/mcpwatch.db (override with --db or MCPWATCH_DB).
+Secrets (API keys, bearer tokens, password fields) are redacted from the
+stored copy by default — never from live traffic. Disable with --no-redact.
 `;
 
 function readVersion(): string {
@@ -85,6 +101,15 @@ function fail(message: string): never {
   process.exit(2);
 }
 
+function stringFlag(flags: Map<string, string | true>, name: string): string | undefined {
+  const value = flags.get(name);
+  return typeof value === "string" ? value : undefined;
+}
+
+function redactorFlag(flags: Map<string, string | true>): Redactor | null | undefined {
+  return flags.get("no-redact") === true ? null : undefined; // undefined → from env
+}
+
 function cmdRun(argv: string[]): void {
   const sep = argv.indexOf("--");
   if (sep === -1 || sep === argv.length - 1) {
@@ -97,13 +122,83 @@ function cmdRun(argv: string[]): void {
 
   const command = serverCmd[0]!;
   const args = serverCmd.slice(1);
-  const name = flags.get("name");
   runProxy({
-    serverName: typeof name === "string" ? name : path.basename(command),
+    serverName: stringFlag(flags, "name") ?? path.basename(command),
     command,
     args,
-    dbPath: typeof flags.get("db") === "string" ? (flags.get("db") as string) : undefined,
+    dbPath: stringFlag(flags, "db"),
+    redactor: redactorFlag(flags),
   });
+}
+
+function cmdHttp(argv: string[]): void {
+  const { flags, positional } = parseFlags(argv, new Set(["port", "name", "db"]));
+  const target = positional[0];
+  if (target === undefined) fail(`"http" needs a target URL (see --help)`);
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+  } catch {
+    fail(`invalid target URL "${target}"`);
+  }
+  const portFlag = Number(flags.get("port"));
+  const port = Number.isFinite(portFlag) && portFlag > 0 ? portFlag : 4681;
+
+  const proxy = createHttpProxy({
+    target,
+    serverName: stringFlag(flags, "name") ?? parsed.host,
+    port,
+    dbPath: stringFlag(flags, "db"),
+    redactor: redactorFlag(flags),
+  });
+  proxy.server.on("listening", () => {
+    process.stdout.write(
+      `mcpwatch recording proxy → http://127.0.0.1:${port}  (forwarding to ${target})\n` +
+        `Point your MCP client at the local URL. Ctrl-C to stop.\n`,
+    );
+  });
+  proxy.server.on("error", (err) => {
+    fail(`could not listen on port ${port}: ${String(err)}`);
+  });
+  const shutdown = (): void => {
+    void proxy.close().then(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+function cmdExport(argv: string[]): void {
+  const { flags, positional } = parseFlags(argv, new Set(["out", "db"]));
+  const idArg = positional[0];
+  if (idArg === undefined) fail(`"export" needs a session id (see: mcpwatch sessions)`);
+  const store = openStore(flags);
+  const session = store.findSessionByPrefix(idArg);
+  if (session === undefined) {
+    store.close();
+    fail(`no session matching "${idArg}"`);
+  }
+  const html = renderSessionHtml(store, session.id)!;
+  store.close();
+  const out = stringFlag(flags, "out") ?? `mcpwatch-${session.server_name}-${session.id.slice(0, 8)}.html`;
+  fs.writeFileSync(out, html);
+  process.stdout.write(`exported ${session.id} → ${out}\n`);
+}
+
+function cmdGc(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["keep-days", "keep-sessions", "db"]));
+  const keepDays = Number(flags.get("keep-days"));
+  const keepSessions = Number(flags.get("keep-sessions"));
+  const opts = {
+    keepDays: Number.isFinite(keepDays) && keepDays >= 0 ? keepDays : undefined,
+    keepSessions: Number.isFinite(keepSessions) && keepSessions >= 0 ? keepSessions : undefined,
+  };
+  if (opts.keepDays === undefined && opts.keepSessions === undefined) opts.keepDays = 30;
+  const store = openStore(flags);
+  const result = store.gc(opts);
+  store.close();
+  process.stdout.write(
+    `deleted ${result.sessions} sessions (${result.calls} calls, ${result.frames} frames); database compacted\n`,
+  );
 }
 
 function openStore(flags: Map<string, string | true>): Store {
@@ -259,8 +354,14 @@ function main(): void {
   switch (command) {
     case "run":
       return cmdRun(rest);
+    case "http":
+      return cmdHttp(rest);
     case "ui":
       return cmdUi(rest);
+    case "export":
+      return cmdExport(rest);
+    case "gc":
+      return cmdGc(rest);
     case "init":
       return cmdInit(rest);
     case "unwrap":

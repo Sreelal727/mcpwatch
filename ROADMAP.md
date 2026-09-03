@@ -60,12 +60,13 @@ appear; `unwrap` → configs byte-identical to backups.
 **Acceptance:** the demo GIF — agent working on the left, calls streaming into the
 dashboard on the right — makes people say "I want that."
 
-### Phase 4 — Hardening & polish
-- Streamable HTTP transport support (remote/local HTTP servers).
-- Session export as a single self-contained HTML file (shareable bug reports).
-- Secret redaction patterns; token/size/cost estimates; retention limits & `mcpwatch gc`.
-- Windows support pass. Real README: GIF above the fold, one-line install,
-  honest comparison table (Inspector, mcpsnoop, SaaS observability).
+### Phase 4 — Hardening & polish ✅ (code + README; demo GIF still to record)
+- ✅ Streamable HTTP transport: `mcpwatch http <url>` recording reverse proxy (SSE included).
+- ✅ Session export as a single self-contained, scriptless HTML file.
+- ✅ Secret redaction at capture time, on by default (`--no-redact`, `MCPWATCH_REDACT_EXTRA`).
+- ✅ Retention: `mcpwatch gc --keep-days/--keep-sessions` + VACUUM.
+- ✅ Windows added to CI matrix (verify on first push). Real README with comparison table.
+- ⬜ Record demo GIF for the README (scripts/seed-demo.ts --keep-running + dashboard).
 
 ### Phase 5 — Beta & launch prep
 - 5–10 beta users from MCP Discord / r/mcp; fix what they hit.

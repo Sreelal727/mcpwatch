@@ -28,6 +28,8 @@ export interface FrameInput {
   toolName?: string;
   raw: string;
   truncated: boolean;
+  /** Number of redactions applied to the stored copy. */
+  redacted?: number;
 }
 
 export interface CallInput {
@@ -83,7 +85,8 @@ export class Store {
         rpc_id TEXT,
         tool_name TEXT,
         raw TEXT NOT NULL,
-        truncated INTEGER NOT NULL DEFAULT 0
+        truncated INTEGER NOT NULL DEFAULT 0,
+        redacted INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_frames_session ON frames(session_id, id);
       CREATE TABLE IF NOT EXISTS calls (
@@ -103,6 +106,16 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS idx_calls_session ON calls(session_id, id);
     `);
+
+    // Migration ladder for databases created by older versions.
+    const version = this.db.pragma("user_version", { simple: true }) as number;
+    if (version < 2) {
+      const columns = this.db.pragma("table_info(frames)") as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === "redacted")) {
+        this.db.exec(`ALTER TABLE frames ADD COLUMN redacted INTEGER NOT NULL DEFAULT 0`);
+      }
+      this.db.pragma("user_version = 2");
+    }
   }
 
   createSession(input: {
@@ -138,8 +151,8 @@ export class Store {
   insertFrame(f: FrameInput): number {
     const res = this.db
       .prepare(
-        `INSERT INTO frames (session_id, ts, direction, kind, method, rpc_id, tool_name, raw, truncated)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO frames (session_id, ts, direction, kind, method, rpc_id, tool_name, raw, truncated, redacted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         f.sessionId,
@@ -151,6 +164,7 @@ export class Store {
         f.toolName ?? null,
         f.raw,
         f.truncated ? 1 : 0,
+        f.redacted ?? 0,
       );
     return Number(res.lastInsertRowid);
   }
@@ -225,6 +239,15 @@ export class Store {
       | undefined;
   }
 
+  /** Exact id, or unique-enough prefix (most recent wins on ties). */
+  findSessionByPrefix(prefix: string): SessionRow | undefined {
+    const exact = this.getSession(prefix);
+    if (exact !== undefined) return exact;
+    return this.db
+      .prepare(`SELECT * FROM sessions WHERE id LIKE ? ORDER BY started_at DESC LIMIT 1`)
+      .get(prefix + "%") as SessionRow | undefined;
+  }
+
   /** Non-protocol stdout lines — servers logging where they shouldn't. */
   listGarbageFrames(sessionId: string, limit = 50): Array<Record<string, unknown>> {
     return this.db
@@ -270,6 +293,47 @@ export class Store {
       )
       .get() as { f: number; c: number; s: number; e: number };
     return `${row.f}:${row.c}:${row.s}:${row.e}`;
+  }
+
+  /**
+   * Delete old sessions (and their frames/calls), keeping everything newer
+   * than `keepDays` and/or the `keepSessions` most recent. Returns counts.
+   */
+  gc(opts: { keepDays?: number; keepSessions?: number }): {
+    sessions: number;
+    frames: number;
+    calls: number;
+  } {
+    const doomed = new Set<string>();
+    if (opts.keepDays !== undefined) {
+      const cutoff = Date.now() - opts.keepDays * 24 * 60 * 60 * 1000;
+      const rows = this.db
+        .prepare(`SELECT id FROM sessions WHERE started_at < ?`)
+        .all(cutoff) as Array<{ id: string }>;
+      for (const row of rows) doomed.add(row.id);
+    }
+    if (opts.keepSessions !== undefined) {
+      const rows = this.db
+        .prepare(`SELECT id FROM sessions ORDER BY started_at DESC LIMIT -1 OFFSET ?`)
+        .all(opts.keepSessions) as Array<{ id: string }>;
+      for (const row of rows) doomed.add(row.id);
+    }
+    let frames = 0;
+    let calls = 0;
+    const run = this.db.transaction((ids: string[]) => {
+      const delCalls = this.db.prepare(`DELETE FROM calls WHERE session_id = ?`);
+      const delFrames = this.db.prepare(`DELETE FROM frames WHERE session_id = ?`);
+      const delSession = this.db.prepare(`DELETE FROM sessions WHERE id = ?`);
+      for (const id of ids) {
+        // calls reference frames; delete in dependency order.
+        calls += delCalls.run(id).changes;
+        frames += delFrames.run(id).changes;
+        delSession.run(id);
+      }
+    });
+    run([...doomed]);
+    if (doomed.size > 0) this.db.exec("VACUUM");
+    return { sessions: doomed.size, frames, calls };
   }
 
   close(): void {
