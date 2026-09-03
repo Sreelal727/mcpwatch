@@ -3,13 +3,30 @@ import fs from "node:fs";
 import path from "node:path";
 import { runProxy } from "./proxy/proxy.js";
 import { Store, defaultDbPath } from "./store/store.js";
+import {
+  instrumentInit,
+  instrumentStatus,
+  instrumentUnwrap,
+} from "./instrument/instrument.js";
 
 const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/mcpwatch)
 
 Usage:
+  mcpwatch init [--dry-run]
+      Instrument your MCP clients (Claude Desktop, Cursor, this project's
+      .mcp.json): every stdio server is wrapped to run through the recording
+      proxy. Timestamped backups are written next to each changed file.
+      Restart your client afterwards. --dry-run only shows what would change.
+
+  mcpwatch unwrap
+      Undo init: restore every entry that is still wrapped to its original.
+
+  mcpwatch status
+      Show which configs are instrumented.
+
   mcpwatch run [--name <server>] [--db <path>] -- <command> [args...]
-      Run an MCP stdio server through the recording proxy. Everything before
-      "--" configures mcpwatch; everything after is the real server command.
+      Run one MCP stdio server through the recording proxy directly.
+      Everything after "--" is the real server command.
 
   mcpwatch sessions [--json] [--db <path>] [--limit <n>]
       List recorded sessions.
@@ -143,11 +160,73 @@ function cmdCalls(argv: string[]): void {
   }
 }
 
+function cmdInit(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set());
+  const dryRun = flags.get("dry-run") === true;
+  const reports = instrumentInit({ dryRun });
+
+  if (reports.length === 0) {
+    process.stdout.write(
+      "No known MCP client configs found (Claude Desktop, Cursor, ./.mcp.json).\n",
+    );
+    return;
+  }
+  for (const r of reports) {
+    process.stdout.write(`${r.client} — ${r.file}\n`);
+    if (r.error !== undefined) process.stdout.write(`  ! ${r.error}\n`);
+    for (const name of r.wrapped)
+      process.stdout.write(`  ${dryRun ? "would wrap" : "wrapped"}: ${name}\n`);
+    for (const name of r.alreadyWrapped) process.stdout.write(`  already wrapped: ${name}\n`);
+    for (const name of r.skippedRemote)
+      process.stdout.write(`  skipped (remote server): ${name}\n`);
+    if (r.backupPath !== undefined) process.stdout.write(`  backup: ${r.backupPath}\n`);
+  }
+  if (!dryRun && reports.some((r) => r.wrapped.length > 0)) {
+    process.stdout.write("\nRestart your MCP client(s) to start recording. Undo: mcpwatch unwrap\n");
+  }
+}
+
+function cmdUnwrap(): void {
+  const reports = instrumentUnwrap();
+  if (reports.length === 0) {
+    process.stdout.write("Nothing is instrumented.\n");
+    return;
+  }
+  for (const r of reports) {
+    process.stdout.write(`${r.file}\n`);
+    if (r.error !== undefined) process.stdout.write(`  ! ${r.error}\n`);
+    for (const name of r.restored) process.stdout.write(`  restored: ${name}\n`);
+    for (const name of r.leftAlone)
+      process.stdout.write(`  left alone (edited or removed since init): ${name}\n`);
+  }
+  process.stdout.write("\nRestart your MCP client(s) for the change to take effect.\n");
+}
+
+function cmdStatus(): void {
+  const entries = instrumentStatus();
+  if (entries.length === 0) {
+    process.stdout.write("Nothing is instrumented. Run: mcpwatch init\n");
+    return;
+  }
+  for (const e of entries) {
+    const state = e.stillWrapped ? "active" : "inactive (config changed?)";
+    process.stdout.write(`${state}  ${e.file}\n`);
+    process.stdout.write(`  servers: ${e.wrappedNames.join(", ") || "-"}\n`);
+    process.stdout.write(`  backup:  ${e.backupPath}\n`);
+  }
+}
+
 function main(): void {
   const [command, ...rest] = process.argv.slice(2);
   switch (command) {
     case "run":
       return cmdRun(rest);
+    case "init":
+      return cmdInit(rest);
+    case "unwrap":
+      return cmdUnwrap();
+    case "status":
+      return cmdStatus();
     case "sessions":
       return cmdSessions(rest);
     case "calls":
