@@ -3,11 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { runProxy } from "./proxy/proxy.js";
 import { Store, defaultDbPath } from "./store/store.js";
+import { spawn } from "node:child_process";
 import {
   instrumentInit,
   instrumentStatus,
   instrumentUnwrap,
 } from "./instrument/instrument.js";
+import { createUiServer } from "./server/ui.js";
 
 const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/mcpwatch)
 
@@ -23,6 +25,10 @@ Usage:
 
   mcpwatch status
       Show which configs are instrumented.
+
+  mcpwatch ui [--port <n>] [--db <path>] [--no-open]
+      Open the local dashboard (default http://127.0.0.1:4680). Local-only:
+      the server binds 127.0.0.1 and your data never leaves this machine.
 
   mcpwatch run [--name <server>] [--db <path>] -- <command> [args...]
       Run one MCP stdio server through the recording proxy directly.
@@ -216,11 +222,45 @@ function cmdStatus(): void {
   }
 }
 
+function cmdUi(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["port", "db"]));
+  const portFlag = Number(flags.get("port"));
+  const port = Number.isFinite(portFlag) && portFlag > 0 ? portFlag : 4680;
+  const store = openStore(flags);
+  const ui = createUiServer({ store, port });
+
+  ui.server.on("listening", () => {
+    const url = `http://127.0.0.1:${port}`;
+    process.stdout.write(`mcpwatch dashboard → ${url}\n`);
+    if (flags.get("no-open") !== true) {
+      const opener =
+        process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+      spawn(opener, [url], { stdio: "ignore", detached: true, shell: process.platform === "win32" }).on(
+        "error",
+        () => {},
+      );
+    }
+  });
+  ui.server.on("error", (err) => {
+    fail(`could not start dashboard on port ${port}: ${String(err)}`);
+  });
+
+  const shutdown = (): void => {
+    ui.close();
+    store.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
 function main(): void {
   const [command, ...rest] = process.argv.slice(2);
   switch (command) {
     case "run":
       return cmdRun(rest);
+    case "ui":
+      return cmdUi(rest);
     case "init":
       return cmdInit(rest);
     case "unwrap":

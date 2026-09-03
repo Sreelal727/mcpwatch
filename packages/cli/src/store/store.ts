@@ -219,6 +219,59 @@ export class Store {
       .all(sessionId) as Array<Record<string, unknown>>;
   }
 
+  getSession(id: string): SessionRow | undefined {
+    return this.db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(id) as
+      | SessionRow
+      | undefined;
+  }
+
+  /** Non-protocol stdout lines — servers logging where they shouldn't. */
+  listGarbageFrames(sessionId: string, limit = 50): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, ts, direction, substr(raw, 1, 500) AS raw, truncated
+         FROM frames WHERE session_id = ? AND kind IN ('garbage', 'overflow', 'invalid')
+         ORDER BY id LIMIT ?`,
+      )
+      .all(sessionId, limit) as Array<Record<string, unknown>>;
+  }
+
+  getCallDetail(callId: number): Record<string, unknown> | undefined {
+    const call = this.db.prepare(`SELECT * FROM calls WHERE id = ?`).get(callId) as
+      | Record<string, unknown>
+      | undefined;
+    if (call === undefined) return undefined;
+    const frame = this.db.prepare(`SELECT raw, truncated FROM frames WHERE id = ?`);
+    const request = frame.get(call.request_frame_id) as Record<string, unknown> | undefined;
+    const response =
+      call.response_frame_id === null
+        ? undefined
+        : (frame.get(call.response_frame_id) as Record<string, unknown> | undefined);
+    return {
+      ...call,
+      request_raw: request?.raw ?? null,
+      request_truncated: request?.truncated ?? 0,
+      response_raw: response?.raw ?? null,
+      response_truncated: response?.truncated ?? 0,
+    };
+  }
+
+  /**
+   * Cheap change-detection tuple for live updates: any insert or session
+   * close changes at least one component.
+   */
+  version(): string {
+    const row = this.db
+      .prepare(
+        `SELECT (SELECT COALESCE(MAX(id), 0) FROM frames) AS f,
+                (SELECT COALESCE(MAX(id), 0) FROM calls) AS c,
+                (SELECT COUNT(*) FROM sessions) AS s,
+                (SELECT COALESCE(MAX(COALESCE(ended_at, 0)), 0) FROM sessions) AS e`,
+      )
+      .get() as { f: number; c: number; s: number; e: number };
+    return `${row.f}:${row.c}:${row.s}:${row.e}`;
+  }
+
   close(): void {
     this.db.close();
   }

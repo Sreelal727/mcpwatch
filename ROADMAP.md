@@ -49,7 +49,7 @@ database contains the complete, correctly paired record. Verified by e2e tests.
 **Acceptance:** on a machine with Claude Code, `init` → use the agent normally → sessions
 appear; `unwrap` → configs byte-identical to backups.
 
-### Phase 3 — The dashboard (our differentiator)
+### Phase 3 — The dashboard (our differentiator) ✅
 `mcpwatch ui` serves a local web app (no cloud):
 - Live session feed (WebSocket tail) — watch calls stream in as the agent works.
 - Session timeline: every call with tool name, status, latency; click → full
