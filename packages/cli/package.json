@@ -4,6 +4,14 @@
   "description": "Flight recorder for AI agents — a transparent proxy that records every MCP tool call, with a local dashboard. All local, zero config.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcpwatch/mcpwatch.git"
+  },
+  "homepage": "https://github.com/mcpwatch/mcpwatch#readme",
+  "bugs": {
+    "url": "https://github.com/mcpwatch/mcpwatch/issues"
+  },
   "engines": {
     "node": ">=20"
   },

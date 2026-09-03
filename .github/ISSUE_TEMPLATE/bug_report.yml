@@ -1,0 +1,50 @@
+name: 🐛 Bug report
+description: Something broke, misrecorded, or looked wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Tip: `mcpwatch export <session-id>` produces a
+        self-contained HTML file of the affected session — attaching one (after
+        checking it for anything sensitive) makes most bugs trivially reproducible.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How can we reproduce it?
+      placeholder: |
+        1. mcpwatch init
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mcpwatch version
+      placeholder: output of `mcpwatch --version`
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: Claude Code 2.x / Cursor / Claude Desktop / other
+  - type: input
+    id: os
+    attributes:
+      label: OS and Node version
+      placeholder: macOS 15, Node 22
+  - type: checkboxes
+    id: passthrough
+    attributes:
+      label: Impact
+      options:
+        - label: This broke my agent/client (passthrough issue — we treat these as top priority)
+        - label: This only affected recording or the dashboard

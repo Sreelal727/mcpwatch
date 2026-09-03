@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Questions & ideas
+    url: https://github.com/mcpwatch/mcpwatch/discussions
+    about: Not sure it's a bug? Want to talk through an idea first? Start here.
+  - name: 🔒 Security reports
+    url: https://github.com/mcpwatch/mcpwatch/security/advisories/new
+    about: Please report vulnerabilities privately, never as public issues.

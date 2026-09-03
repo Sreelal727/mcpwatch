@@ -1,0 +1,24 @@
+name: 💡 Feature request
+description: An idea that would make mcpwatch better
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation where you wanted this, not just the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Heads-up on scope: mcpwatch stays local-only (no SaaS, no accounts, no
+        telemetry) and the proxy never modifies traffic until the opt-in guardrails
+        feature ships. Ideas that fit those principles land fastest — see
+        [ROADMAP.md](../../ROADMAP.md).
