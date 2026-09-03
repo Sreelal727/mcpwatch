@@ -13,7 +13,7 @@ npm run build
 npm test
 ```
 
-- Node 20+ required. The monorepo has two packages: [`packages/cli`](packages/cli)
+- Node 22+ required. The monorepo has two packages: [`packages/cli`](packages/cli)
   (proxy, recorder, CLI, dashboard server) and [`packages/ui`](packages/ui) (React
   dashboard, which builds into `packages/cli/ui-dist`).
 - Hack on the dashboard with live demo data:

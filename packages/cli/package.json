@@ -13,7 +13,7 @@
     "url": "https://github.com/Sreelal727/mcpwatch/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "mcpwatch": "dist/index.js"
