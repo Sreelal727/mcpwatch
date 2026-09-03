@@ -47,7 +47,7 @@ Then just talk to your agent the way you already do:
 
 > **You:** that github tool call failed, figure out why
 >
-> **Agent:** *(calls `mcpwatch / recent_failures`)*
+> **Agent:** *(calls mcpwatch's `recent_failures`)*
 > The `create_issue` call failed 40 seconds ago with `Validation Failed: body is too
 > long (65536 max)` — the body you sent was 71,204 characters. I'll split it into an
 > issue plus a follow-up comment.
