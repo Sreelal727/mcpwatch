@@ -68,6 +68,27 @@ dashboard on the right — makes people say "I want that."
 - ✅ Windows added to CI matrix (verify on first push). Real README with comparison table.
 - ⬜ Record demo GIF for the README (scripts/seed-demo.ts --keep-running + dashboard).
 
+### Phase 4.5 — Agent-native surface ✅ (v0.2.0)
+The repositioning that came out of asking "what does this do for someone who is purely
+vibe coding?" They never open a dashboard — but their agent is blind to its own tool
+calls, and we're already holding the ground truth. So we stopped building only a viewer
+for humans and made the recording queryable by the agent itself:
+- ✅ `mcpwatch mcp` — mcpwatch as an MCP server: `recent_failures`, `server_health`,
+  `find_calls`, `get_call`. Hand-rolled on our own JSON-RPC framing (no server framework
+  in a globally-installed CLI's dependency tree), proven against the real SDK client.
+- ✅ `init` registers mcpwatch in the client config, so the tools appear with zero extra
+  steps — and never wraps itself (self-recording loop).
+- ✅ `init` now also works on a client with no `mcpServers` section yet.
+- ✅ `mcpwatch doctor [--json]` — one-shot health report for shell-only agents and CI.
+- ✅ `mcpwatch tail [--json]` — headless live stream; no browser required.
+- ✅ `mcpwatch connect` — copy-paste setup for Claude Code / Codex / Cursor.
+- ✅ Tool descriptions written as trigger conditions, so the agent reaches for them
+  unprompted after a failed call.
+
+**Acceptance:** an agent that just hit an opaque MCP error can explain what actually
+happened without the user opening anything. Covered end to end: real client → proxy →
+real server, then real client → `mcpwatch mcp` → that recording.
+
 ### Phase 5 — Beta & launch prep
 - 5–10 beta users from MCP Discord / r/mcp; fix what they hit.
 - Issue templates, CONTRIBUTING.md, seeded good-first-issues.

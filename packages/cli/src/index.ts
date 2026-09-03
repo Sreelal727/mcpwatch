@@ -6,10 +6,14 @@ import { Store, defaultDbPath } from "./store/store.js";
 import { spawn } from "node:child_process";
 import { renderSessionHtml } from "./export/exportHtml.js";
 import {
+  agentSetupSnippets,
   instrumentInit,
   instrumentStatus,
   instrumentUnwrap,
 } from "./instrument/instrument.js";
+import { runAgentServer } from "./agent/mcpServer.js";
+import { formatOverview, ms as fmtMs } from "./agent/format.js";
+import { overview, parseSince } from "./query/insights.js";
 import { createHttpProxy } from "./proxy/httpProxy.js";
 import { Redactor } from "./proxy/redact.js";
 import { createUiServer } from "./server/ui.js";
@@ -17,11 +21,31 @@ import { createUiServer } from "./server/ui.js";
 const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/Sreelal727/mcpwatch)
 
 Usage:
-  mcpwatch init [--dry-run]
+  mcpwatch init [--dry-run] [--no-agent-tools]
       Instrument your MCP clients (Claude Desktop, Cursor, this project's
       .mcp.json): every stdio server is wrapped to run through the recording
-      proxy. Timestamped backups are written next to each changed file.
-      Restart your client afterwards. --dry-run only shows what would change.
+      proxy, and mcpwatch registers itself as an MCP server so your coding
+      agent can query the recording. Timestamped backups are written next to
+      each changed file. Restart your client afterwards.
+      --dry-run only shows what would change; --no-agent-tools skips the
+      agent-facing MCP server.
+
+  mcpwatch doctor [--since 24h] [--json] [--db <path>]
+      One-shot health report: which MCP servers are erroring, crashing, slow,
+      hanging, or corrupting the protocol by logging to stdout. Designed to be
+      run (and read) by a coding agent — add --json for machine output.
+
+  mcpwatch mcp [--db <path>]
+      Run mcpwatch as an MCP server over stdio, exposing the recording to your
+      coding agent as tools (recent_failures, server_health, find_calls,
+      get_call). Normally started by your client, not by hand.
+
+  mcpwatch connect
+      Print copy-paste setup for giving Claude Code / Codex / Cursor the
+      mcpwatch agent tools.
+
+  mcpwatch tail [--since 10m] [--json] [--db <path>]
+      Follow MCP calls live in the terminal, one line each. No browser needed.
 
   mcpwatch unwrap
       Undo init: restore every entry that is still wrapped to its original.
@@ -264,11 +288,15 @@ function cmdCalls(argv: string[]): void {
 function cmdInit(argv: string[]): void {
   const { flags } = parseFlags(argv, new Set());
   const dryRun = flags.get("dry-run") === true;
-  const reports = instrumentInit({ dryRun });
+  const noAgentTools = flags.get("no-agent-tools") === true;
+  const reports = instrumentInit({ dryRun, noAgentTools });
 
   if (reports.length === 0) {
     process.stdout.write(
-      "No known MCP client configs found (Claude Desktop, Cursor, ./.mcp.json).\n",
+      "No known MCP client configs found (Claude Desktop, Cursor, ./.mcp.json).\n\n" +
+        "To give your coding agent the mcpwatch tools anyway:\n\n" +
+        agentSetupSnippets() +
+        "\n",
     );
     return;
   }
@@ -280,11 +308,111 @@ function cmdInit(argv: string[]): void {
     for (const name of r.alreadyWrapped) process.stdout.write(`  already wrapped: ${name}\n`);
     for (const name of r.skippedRemote)
       process.stdout.write(`  skipped (remote server): ${name}\n`);
+    if (r.addedAgentServer === true)
+      process.stdout.write(`  ${dryRun ? "would add" : "added"}: mcpwatch agent tools\n`);
     if (r.backupPath !== undefined) process.stdout.write(`  backup: ${r.backupPath}\n`);
   }
-  if (!dryRun && reports.some((r) => r.wrapped.length > 0)) {
-    process.stdout.write("\nRestart your MCP client(s) to start recording. Undo: mcpwatch unwrap\n");
+  if (!dryRun && reports.some((r) => r.wrapped.length > 0 || r.addedAgentServer === true)) {
+    process.stdout.write(
+      "\nRestart your MCP client(s) to start recording. Undo: mcpwatch unwrap\n" +
+        (noAgentTools
+          ? ""
+          : "\nYour agent can now answer \"why did that tool call fail?\" itself — it has\n" +
+            "mcpwatch's recent_failures, server_health, find_calls and get_call tools.\n"),
+    );
   }
+}
+
+function cmdConnect(): void {
+  process.stdout.write(
+    "Give your coding agent the mcpwatch tools:\n\n" +
+      agentSetupSnippets() +
+      "\n\nTo also record traffic from servers you already have configured:\n" +
+      "  mcpwatch init\n",
+  );
+}
+
+function cmdMcp(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["db"]));
+  // Stdout is the protocol channel from here on: nothing else may write to it.
+  runAgentServer({ dbPath: stringFlag(flags, "db"), version: readVersion() });
+}
+
+function cmdDoctor(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["db", "since", "limit"]));
+  const window = stringFlag(flags, "since") ?? "24h";
+  const limitFlag = Number(flags.get("limit"));
+  const store = openStore(flags);
+  const report = overview(store, {
+    sinceMs: parseSince(window),
+    limit: Number.isFinite(limitFlag) && limitFlag > 0 ? limitFlag : 10,
+  });
+  store.close();
+
+  if (flags.get("json") === true) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    return;
+  }
+  process.stdout.write(formatOverview(report, window) + "\n");
+}
+
+function cmdTail(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["db", "since"]));
+  const json = flags.get("json") === true;
+  const store = openStore(flags);
+  const sinceMs = parseSince(stringFlag(flags, "since") ?? "10m");
+  const printed = new Set<number>();
+
+  const query = store.db.prepare(
+    `SELECT c.id, c.session_id, s.server_name AS server, c.method, c.tool_name, c.status,
+            c.duration_ms, c.started_at, c.error_message
+     FROM calls c JOIN sessions s ON s.id = c.session_id
+     WHERE c.started_at >= ? AND c.ended_at IS NOT NULL
+     ORDER BY c.id LIMIT 500`,
+  );
+
+  const tick = (): void => {
+    let rows: Array<Record<string, unknown>>;
+    try {
+      rows = query.all(sinceMs) as Array<Record<string, unknown>>;
+    } catch (err) {
+      process.stderr.write(`mcpwatch: read failed: ${String(err)}\n`);
+      return;
+    }
+    for (const row of rows) {
+      const id = Number(row.id);
+      if (printed.has(id)) continue;
+      printed.add(id);
+      if (json) {
+        process.stdout.write(JSON.stringify(row) + "\n");
+        continue;
+      }
+      const label = row.tool_name ? `${row.server}/${row.tool_name}` : `${row.server} ${row.method}`;
+      const mark = row.status === "ok" ? "✓" : "✗";
+      const error = row.error_message
+        ? `  ${String(row.error_message).replace(/\s+/g, " ").slice(0, 100)}`
+        : "";
+      process.stdout.write(
+        `${mark} ${String(new Date(Number(row.started_at)).toTimeString().slice(0, 8))} ` +
+          `${fmtMs(row.duration_ms === null ? null : Number(row.duration_ms)).padStart(7)}  ${label}${error}\n`,
+      );
+    }
+  };
+
+  if (!json) {
+    process.stderr.write(
+      `mcpwatch tail — following MCP calls (last ${stringFlag(flags, "since") ?? "10m"}). Ctrl-C to stop.\n`,
+    );
+  }
+  tick();
+  const timer = setInterval(tick, 500);
+  const stop = (): void => {
+    clearInterval(timer);
+    store.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
 }
 
 function cmdUnwrap(): void {
@@ -297,6 +425,7 @@ function cmdUnwrap(): void {
     process.stdout.write(`${r.file}\n`);
     if (r.error !== undefined) process.stdout.write(`  ! ${r.error}\n`);
     for (const name of r.restored) process.stdout.write(`  restored: ${name}\n`);
+    if (r.removedAgentServer === true) process.stdout.write(`  removed: mcpwatch agent tools\n`);
     for (const name of r.leftAlone)
       process.stdout.write(`  left alone (edited or removed since init): ${name}\n`);
   }
@@ -362,6 +491,14 @@ function main(): void {
       return cmdExport(rest);
     case "gc":
       return cmdGc(rest);
+    case "mcp":
+      return cmdMcp(rest);
+    case "doctor":
+      return cmdDoctor(rest);
+    case "tail":
+      return cmdTail(rest);
+    case "connect":
+      return cmdConnect();
     case "init":
       return cmdInit(rest);
     case "unwrap":

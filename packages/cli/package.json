@@ -1,10 +1,10 @@
 {
   "name": "@sreelal727/mcpwatch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "Flight recorder for AI agents — a transparent proxy that records every MCP tool call, with a local dashboard. All local, zero config.",
+  "description": "Flight recorder for AI agents — records every MCP tool call, then hands the recording back to your coding agent as MCP tools so it can debug itself. All local, zero config.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -29,12 +29,17 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
+    "mcp-server",
     "ai-agents",
+    "agent-tools",
     "observability",
     "proxy",
     "debugging",
     "claude",
-    "cursor"
+    "claude-code",
+    "codex",
+    "cursor",
+    "vibe-coding"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

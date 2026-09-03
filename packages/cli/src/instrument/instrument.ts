@@ -20,6 +20,12 @@ import { fileURLToPath } from "node:url";
 
 export const WRAP_MARKER = "MCPWATCH_WRAPPED";
 
+/** Env marker on the mcpwatch MCP server entry that `init` adds for the agent. */
+export const AGENT_MARKER = "MCPWATCH_AGENT_TOOLS";
+
+/** Name of the server entry that gives the coding agent the mcpwatch tools. */
+export const AGENT_SERVER_NAME = "mcpwatch";
+
 interface ServerEntry {
   command?: unknown;
   args?: unknown;
@@ -46,6 +52,8 @@ export interface InstrumentState {
     {
       backupPath: string;
       wrapped: Record<string, ServerEntry>;
+      /** True when init added the mcpwatch agent-tools server to this file. */
+      addedAgentServer?: boolean;
     }
   >;
 }
@@ -56,6 +64,8 @@ export interface FileChangeReport {
   wrapped: string[];
   alreadyWrapped: string[];
   skippedRemote: string[];
+  /** True when this run added the mcpwatch MCP server for the agent. */
+  addedAgentServer?: boolean;
   error?: string;
   backupPath?: string;
 }
@@ -113,6 +123,32 @@ function isRemote(entry: ServerEntry): boolean {
   return entry.type === "http" || entry.type === "sse" || entry.command === undefined;
 }
 
+/**
+ * True for mcpwatch's own agent-tools server. Wrapping it would point the
+ * recorder at itself: every question the agent asks about the traffic would
+ * become more traffic.
+ */
+function isAgentServer(entry: ServerEntry): boolean {
+  if (
+    typeof entry.env === "object" &&
+    entry.env !== null &&
+    (entry.env as Record<string, unknown>)[AGENT_MARKER] === "1"
+  ) {
+    return true;
+  }
+  const args = Array.isArray(entry.args) ? entry.args.map(String) : [];
+  return args.includes("mcp") && args.some((a) => a.includes("mcpwatch"));
+}
+
+/** The server entry that hands the coding agent the mcpwatch tools. */
+function agentServerEntry(nodePath: string, entryPoint: string): ServerEntry {
+  return {
+    command: nodePath,
+    args: [entryPoint, "mcp"],
+    env: { [AGENT_MARKER]: "1" },
+  };
+}
+
 function wrapEntry(name: string, entry: ServerEntry, nodePath: string, entryPoint: string): ServerEntry {
   const origArgs = Array.isArray(entry.args) ? (entry.args as string[]) : [];
   return {
@@ -131,6 +167,8 @@ export interface InitOptions {
   /** Overridable for tests; defaults to this process's node + built entry. */
   nodePath?: string;
   entryPoint?: string;
+  /** Skip registering the mcpwatch MCP server that gives agents the tools. */
+  noAgentTools?: boolean;
 }
 
 export function instrumentInit(options: InitOptions = {}): FileChangeReport[] {
@@ -157,12 +195,23 @@ export function instrumentInit(options: InitOptions = {}): FileChangeReport[] {
       report.error = `could not parse (left untouched): ${String(err)}`;
       continue;
     }
-    const servers = config.mcpServers;
-    if (typeof servers !== "object" || servers === null) continue;
+    let servers = config.mcpServers;
+    if (typeof servers !== "object" || servers === null) {
+      if (servers !== undefined) {
+        report.error = `"mcpServers" is not an object (left untouched)`;
+        continue;
+      }
+      // A client with no servers configured yet still wants the agent tools:
+      // create the section so the recorder is there before the traffic is.
+      if (options.noAgentTools === true) continue;
+      servers = {};
+      config.mcpServers = servers;
+    }
 
     const fileState = state.files[file] ?? { backupPath: "", wrapped: {} };
     for (const [name, entry] of Object.entries(servers)) {
       if (typeof entry !== "object" || entry === null) continue;
+      if (isAgentServer(entry)) continue;
       if (isWrapped(entry)) {
         report.alreadyWrapped.push(name);
         continue;
@@ -178,7 +227,17 @@ export function instrumentInit(options: InitOptions = {}): FileChangeReport[] {
       report.wrapped.push(name);
     }
 
-    if (report.wrapped.length > 0 && !options.dryRun) {
+    // Give the agent its own eyes: the recorder, exposed as an MCP server the
+    // client will connect to on its next start.
+    if (options.noAgentTools !== true && servers[AGENT_SERVER_NAME] === undefined) {
+      report.addedAgentServer = true;
+      if (!options.dryRun) {
+        servers[AGENT_SERVER_NAME] = agentServerEntry(nodePath, entryPoint);
+        fileState.addedAgentServer = true;
+      }
+    }
+
+    if ((report.wrapped.length > 0 || report.addedAgentServer === true) && !options.dryRun) {
       if (fileState.backupPath === "") {
         fileState.backupPath = `${file}.mcpwatch-backup-${Date.now()}`;
         fs.copyFileSync(file, fileState.backupPath);
@@ -198,6 +257,8 @@ export interface UnwrapReport {
   restored: string[];
   /** Entries we recorded but could not restore (removed or edited by hand). */
   leftAlone: string[];
+  /** True when the mcpwatch agent-tools server was removed from this file. */
+  removedAgentServer?: boolean;
   error?: string;
 }
 
@@ -235,7 +296,21 @@ export function instrumentUnwrap(options: { statePath?: string } = {}): UnwrapRe
       }
     }
 
-    if (report.restored.length > 0) {
+    // Only remove the agent-tools server if we added it and it is still ours.
+    const agentEntry = servers?.[AGENT_SERVER_NAME];
+    if (
+      fileState.addedAgentServer === true &&
+      typeof servers === "object" &&
+      servers !== null &&
+      typeof agentEntry === "object" &&
+      agentEntry !== null &&
+      isAgentServer(agentEntry)
+    ) {
+      delete servers[AGENT_SERVER_NAME];
+      report.removedAgentServer = true;
+    }
+
+    if (report.restored.length > 0 || report.removedAgentServer === true) {
       fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
     }
     if (report.error === undefined) delete state.files[file];
@@ -243,6 +318,26 @@ export function instrumentUnwrap(options: { statePath?: string } = {}): UnwrapRe
 
   saveState(statePath, state);
   return reports;
+}
+
+/**
+ * Paste-ready ways to give an agent the mcpwatch tools when we can't edit a
+ * config ourselves — Claude Code and Codex keep MCP servers in places that are
+ * either CLI-managed or too stateful for us to rewrite safely.
+ */
+export function agentSetupSnippets(pkg = "@sreelal727/mcpwatch"): string {
+  return `Claude Code — run:
+  claude mcp add mcpwatch -- npx -y ${pkg} mcp
+
+Codex CLI — add to ~/.codex/config.toml:
+  [mcp_servers.mcpwatch]
+  command = "npx"
+  args = ["-y", "${pkg}", "mcp"]
+
+Cursor / Claude Desktop / any MCP client — add to the "mcpServers" object:
+  "mcpwatch": { "command": "npx", "args": ["-y", "${pkg}", "mcp"] }
+
+Then restart the client and ask your agent: "check mcpwatch for recent failures".`;
 }
 
 export interface StatusEntry {

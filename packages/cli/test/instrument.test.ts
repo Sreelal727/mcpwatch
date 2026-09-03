@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  AGENT_MARKER,
+  AGENT_SERVER_NAME,
   WRAP_MARKER,
   instrumentInit,
   instrumentStatus,
@@ -140,5 +142,87 @@ describe("client instrumentation", () => {
     expect(status).toHaveLength(1);
     expect(status[0]!.stillWrapped).toBe(true);
     expect(status[0]!.wrappedNames.sort()).toEqual(["filesystem", "github"]);
+  });
+
+  describe("agent tools server", () => {
+    it("registers mcpwatch as an MCP server so the agent can query the recording", () => {
+      const report = init()[0]!;
+      expect(report.addedAgentServer).toBe(true);
+
+      const entry = JSON.parse(fs.readFileSync(cursorConfig, "utf8")).mcpServers[AGENT_SERVER_NAME];
+      expect(entry).toEqual({ command: NODE, args: [ENTRY, "mcp"], env: { [AGENT_MARKER]: "1" } });
+    });
+
+    it("never wraps its own agent server, however many times init runs", () => {
+      init();
+      const second = init()[0]!;
+      expect(second.wrapped).toEqual([]);
+      expect(second.alreadyWrapped).not.toContain(AGENT_SERVER_NAME);
+      expect(second.addedAgentServer).toBeUndefined();
+
+      // The entry must still invoke `mcp` directly, never through `run`.
+      const entry = JSON.parse(fs.readFileSync(cursorConfig, "utf8")).mcpServers[AGENT_SERVER_NAME];
+      expect(entry.args).toEqual([ENTRY, "mcp"]);
+    });
+
+    it("--no-agent-tools leaves the config free of it", () => {
+      const report = instrumentInit({
+        home,
+        cwd,
+        statePath,
+        nodePath: NODE,
+        entryPoint: ENTRY,
+        noAgentTools: true,
+      })[0]!;
+      expect(report.addedAgentServer).toBeUndefined();
+      const config = JSON.parse(fs.readFileSync(cursorConfig, "utf8"));
+      expect(config.mcpServers[AGENT_SERVER_NAME]).toBeUndefined();
+    });
+
+    it("unwrap removes the agent server it added", () => {
+      init();
+      const report = instrumentUnwrap({ statePath })[0]!;
+      expect(report.removedAgentServer).toBe(true);
+      expect(JSON.parse(fs.readFileSync(cursorConfig, "utf8")).mcpServers).toEqual(
+        originalConfig.mcpServers,
+      );
+    });
+
+    it("adds the tools to a client that has no servers configured yet", () => {
+      // The common starting state: a client installed, "mcpServers" absent.
+      fs.writeFileSync(cursorConfig, JSON.stringify({ preferences: { theme: "dark" } }, null, 2));
+
+      const report = init()[0]!;
+      expect(report.addedAgentServer).toBe(true);
+      expect(report.error).toBeUndefined();
+
+      const config = JSON.parse(fs.readFileSync(cursorConfig, "utf8"));
+      expect(config.mcpServers[AGENT_SERVER_NAME].args).toEqual([ENTRY, "mcp"]);
+      expect(config.preferences).toEqual({ theme: "dark" });
+    });
+
+    it("refuses to touch a config whose mcpServers is not an object", () => {
+      fs.writeFileSync(cursorConfig, JSON.stringify({ mcpServers: "nope" }));
+      const report = init()[0]!;
+      expect(report.error).toMatch(/not an object/);
+      expect(report.addedAgentServer).toBeUndefined();
+      expect(JSON.parse(fs.readFileSync(cursorConfig, "utf8"))).toEqual({ mcpServers: "nope" });
+    });
+
+    it("leaves an mcpwatch entry the user configured themselves alone", () => {
+      const own = { command: "npx", args: ["-y", "@sreelal727/mcpwatch", "mcp"] };
+      const config = JSON.parse(fs.readFileSync(cursorConfig, "utf8"));
+      config.mcpServers[AGENT_SERVER_NAME] = own;
+      fs.writeFileSync(cursorConfig, JSON.stringify(config, null, 2) + "\n");
+
+      const report = init()[0]!;
+      expect(report.addedAgentServer).toBeUndefined();
+      expect(report.wrapped).not.toContain(AGENT_SERVER_NAME);
+
+      instrumentUnwrap({ statePath });
+      expect(JSON.parse(fs.readFileSync(cursorConfig, "utf8")).mcpServers[AGENT_SERVER_NAME]).toEqual(
+        own,
+      );
+    });
   });
 });
