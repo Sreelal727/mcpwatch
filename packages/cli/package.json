@@ -1,0 +1,45 @@
+{
+  "name": "mcpwatch",
+  "version": "0.0.1",
+  "description": "Flight recorder for AI agents — a transparent proxy that records every MCP tool call, with a local dashboard. All local, zero config.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "mcpwatch": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "observability",
+    "proxy",
+    "debugging",
+    "claude",
+    "cursor"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0",
+    "zod": "^3.25.0"
+  }
+}
