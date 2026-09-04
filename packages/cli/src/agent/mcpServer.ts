@@ -8,7 +8,8 @@ import {
   serverHealth,
   stalledCalls,
 } from "../query/insights.js";
-import { formatCalls, formatFailures, formatHealth, formatStalled, ms, NO_DATA } from "./format.js";
+import { costReport } from "../query/cost.js";
+import { formatCalls, formatCost, formatFailures, formatHealth, formatStalled, ms, NO_DATA } from "./format.js";
 
 /**
  * mcpwatch as an MCP server: the recorder, exposed to the coding agent that is
@@ -120,6 +121,32 @@ export const TOOLS: ToolDef[] = [
       if (!hasAnyData(store)) return NO_DATA;
       const { label, sinceMs } = windowOf(args, "24h");
       return formatHealth(serverHealth(store, sinceMs), label);
+    },
+  },
+  {
+    name: "token_costs",
+    title: "What this MCP setup costs in tokens",
+    description:
+      "Itemise what the user's MCP servers cost in context tokens: the per-session tax each server " +
+      "charges just by being configured (its tool definitions are injected into every session whether " +
+      "used or not), the request/response traffic on top, and a ranked list of what to remove. Call this " +
+      "when the user asks about token usage, context filling up, running out of context, slow or " +
+      "expensive sessions, cutting their bill, or which MCP servers are worth keeping.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: { type: "string", description: 'Time window, e.g. "7d", "30d". Default "30d".' },
+        usd_per_million: {
+          type: "number",
+          description: "Token price used for the dollar estimates (default 5).",
+        },
+      },
+    },
+    run: (store, args) => {
+      if (!hasAnyData(store)) return NO_DATA;
+      const label = str(args, "since") ?? "30d";
+      const rate = num(args, "usd_per_million") ?? 5;
+      return formatCost(costReport(store, { sinceMs: parseSince(label) }), label, rate);
     },
   },
   {

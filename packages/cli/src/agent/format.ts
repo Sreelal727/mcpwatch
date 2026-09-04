@@ -1,4 +1,5 @@
 import type { FailureRow, ServerHealth, StalledRow, CallRow, Overview } from "../query/insights.js";
+import type { CostReport } from "../query/cost.js";
 
 /**
  * Rendering for agent readers.
@@ -112,6 +113,90 @@ export function formatCalls(rows: CallRow[], description: string): string {
     return body.length > 0 ? `${head}\n${indent(body.join("\n"))}` : head;
   });
   return `${rows.length} call${rows.length === 1 ? "" : "s"} matching ${description}, newest first:\n\n${lines.join("\n\n")}\n\nUse get_call(<id>) for the full request and response payloads.`;
+}
+
+function n(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+/** Dollars for a token count at a given USD-per-million-tokens rate. */
+function usd(tokens: number, ratePerMillion: number): string {
+  const dollars = (tokens / 1_000_000) * ratePerMillion;
+  if (dollars >= 1) return `$${dollars.toFixed(2)}`;
+  if (dollars >= 0.01) return `$${dollars.toFixed(2)}`;
+  return `$${dollars.toFixed(3)}`;
+}
+
+export const COST_DISCLAIMER =
+  "Token counts are estimated from recorded bytes (~4 chars/token) — use them to compare and " +
+  "prioritise, not to reconcile a bill.";
+
+/**
+ * The `cost` report. Ends in specific things to delete, because a number
+ * nobody can act on is just anxiety.
+ */
+export function formatCost(report: CostReport, window: string, ratePerMillion: number): string {
+  if (report.servers.length === 0) return NO_DATA;
+  const out: string[] = [];
+
+  out.push(
+    `Your MCP setup costs ~${n(report.per_session_tax)} tokens per session before you type a word ` +
+      `(${usd(report.per_session_tax, ratePerMillion)} at $${ratePerMillion}/M tokens).`,
+    "",
+    "PER-SESSION TAX — tool definitions loaded into every new session:",
+  );
+
+  const width = Math.max(...report.servers.map((s) => s.server.length), 8);
+  for (const s of report.servers) {
+    if (s.definition_tokens === 0) continue;
+    const usage =
+      s.tool_count === 0
+        ? ""
+        : s.calls === 0
+          ? `   ${s.tool_count} tools, none used`
+          : `   ${s.tool_count} tools, ${s.tools_used} used`;
+    const flag = s.calls === 0 ? "  ← never called" : "";
+    out.push(`  ${s.server.padEnd(width)}  ${n(s.definition_tokens).padStart(8)} tokens${usage}${flag}`);
+  }
+  out.push(`  ${"".padEnd(width)}  ${n(report.per_session_tax).padStart(8)} tokens, every session`);
+
+  out.push(
+    "",
+    `TRAFFIC — requests and responses over the last ${window} (${report.sessions} session${report.sessions === 1 ? "" : "s"}):`,
+    `  ${n(report.traffic_tokens)} tokens  (${usd(report.traffic_tokens, ratePerMillion)})`,
+    `  plus ${n(report.definition_tokens)} tokens of definitions reloaded across those sessions`,
+    `  total ${n(report.total_tokens)} tokens  (${usd(report.total_tokens, ratePerMillion)})`,
+  );
+
+  if (report.projection !== undefined) {
+    const p = report.projection;
+    out.push(
+      "",
+      `AT YOUR ACTUAL PACE — ${p.startups_per_day} server startups/day over ${p.days_observed} days:`,
+      `  ~${n(p.monthly_definition_tokens)} tokens/month (${usd(p.monthly_definition_tokens, ratePerMillion)}) ` +
+        `on tool definitions alone, before any work happens`,
+      `  ~${n(p.monthly_total_tokens)} tokens/month (${usd(p.monthly_total_tokens, ratePerMillion)}) all in`,
+    );
+  }
+
+  if (report.waste.length > 0) {
+    out.push(
+      "",
+      `BIGGEST SAVINGS — ~${n(report.wasted_tokens)} tokens (${usd(report.wasted_tokens, ratePerMillion)}) ` +
+        `of the above bought you nothing:`,
+    );
+    report.waste.slice(0, 6).forEach((w, i) => {
+      const recurring =
+        w.per_session_tokens === undefined ? "" : ` (${n(w.per_session_tokens)} of them every session)`;
+      out.push(`  ${i + 1}. ${n(w.tokens)} tokens${recurring} — ${w.server}: ${w.detail}`);
+      out.push(`     → ${w.action}`);
+    });
+  } else {
+    out.push("", "No obvious waste found: no unused servers, failed calls, or repeated calls.");
+  }
+
+  out.push("", COST_DISCLAIMER);
+  return out.join("\n");
 }
 
 /** The `doctor` report — same content for a human terminal and an agent. */

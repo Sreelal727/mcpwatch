@@ -1,10 +1,10 @@
 {
   "name": "@sreelal727/mcpwatch",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "Flight recorder for AI agents — records every MCP tool call, then hands the recording back to your coding agent as MCP tools so it can debug itself. All local, zero config.",
+  "description": "See what your MCP servers cost you in tokens — and cut it. Records every MCP tool call, itemises the per-session tax each server charges, and tells your coding agent what to remove. All local, zero config.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -30,6 +30,10 @@
     "mcp",
     "model-context-protocol",
     "mcp-server",
+    "token-usage",
+    "cost-optimization",
+    "context-window",
+    "llm-cost",
     "ai-agents",
     "agent-tools",
     "observability",

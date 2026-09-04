@@ -2,13 +2,14 @@
 
 # 👁 mcpwatch
 
-**Your coding agent can't see what its tools actually did. Now it can.**
+**Every MCP server you've installed is charging you tokens on every single session.
+See the bill — then cut it.**
 
-A flight recorder for AI agents: a transparent proxy that records every MCP tool call
-between your client (Claude Code, Codex, Cursor, Claude Desktop) and your MCP servers —
-then hands that recording back to the agent as MCP tools, so it can debug itself.
+mcpwatch records the real traffic between your coding agent (Claude Code, Codex, Cursor,
+Claude Desktop) and your MCP servers, then itemises what that setup actually costs you in
+context — and tells you exactly what to delete.
 
-*One command. All local. Zero config.*
+*One command. All local. Zero config. No account, ever.*
 
 [![npm](https://img.shields.io/npm/v/%40sreelal727%2Fmcpwatch?label=npm&color=cb3837)](https://www.npmjs.com/package/@sreelal727/mcpwatch)
 [![CI](https://github.com/Sreelal727/mcpwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/Sreelal727/mcpwatch/actions/workflows/ci.yml)
@@ -22,12 +23,16 @@ then hands that recording back to the agent as MCP tools, so it can debug itself
 
 ---
 
-Your agent just called a tool and it failed. Which tool? With what arguments? What did
-the server actually say? Your agent doesn't know either — MCP clients swallow errors,
-truncate payloads, and forget everything when the session ends. So it guesses, retries
-the same broken call, and you burn twenty minutes watching it flail.
+Here's what nobody tells you when you install an MCP server: **its tool definitions get
+injected into your agent's context at the start of every single session, whether you use
+that server or not.** A big vendor integration with 50 tools can cost you 15,000+ tokens
+before you type a word. You pay it again on the next session, and the next.
 
-mcpwatch records the real wire traffic and gives it back to the agent.
+On top of that you're paying for tool responses that return 200 kB when you needed one
+row, calls that fail and get retried, and agents re-fetching things they already had.
+
+None of it shows up anywhere. mcpwatch records the actual bytes on the wire and turns
+them into an itemised bill.
 
 ## Quick start
 
@@ -35,50 +40,77 @@ mcpwatch records the real wire traffic and gives it back to the agent.
 npx @sreelal727/mcpwatch init
 ```
 
-Restart your client. That's the whole setup. Two things just happened:
+Restart your client, work normally for a day, then:
 
-1. Every stdio MCP server in your Claude Code, Codex, Cursor, and Claude Desktop configs
-   now runs through the recording proxy (timestamped backups, fully reversible with
-   `unwrap`).
-2. **mcpwatch registered itself as an MCP server**, so your agent now has tools to read
-   that recording.
+```
+npx @sreelal727/mcpwatch cost
+```
 
-Then just talk to your agent the way you already do:
+```
+Your MCP setup costs ~12,486 tokens per session before you type a word ($0.06 at $5/M tokens).
 
-> **You:** that github tool call failed, figure out why
->
-> **Agent:** *(calls mcpwatch's `recent_failures`)*
-> The `create_issue` call failed 40 seconds ago with `Validation Failed: body is too
-> long (65536 max)` — the body you sent was 71,204 characters. I'll split it into an
-> issue plus a follow-up comment.
+PER-SESSION TAX — tool definitions loaded into every new session:
+  github        10,762 tokens   46 tools, none used  ← never called
+  filesystem       780 tokens    8 tools, 2 used
+  postgres         944 tokens    9 tools, 1 used
+                12,486 tokens, every session
 
-No dashboard to open, no logs to paste, no "can you show me the error?" The agent looks
-it up itself, because the ground truth is sitting on disk and it finally has a key.
+AT YOUR ACTUAL PACE — 34.9 server startups/day over 11.3 days:
+  ~4,362,755 tokens/month ($21.81) on tool definitions alone, before any work happens
+  ~4,939,089 tokens/month ($24.70) all in
+
+BIGGEST SAVINGS — ~1,510,287 tokens ($7.55) of the above bought you nothing:
+  1. 1,420,584 tokens (10,762 of them every session) — github: 46 tools loaded into
+     every session, never called
+     → Remove "github" from your MCP config (or load it only in projects that need it).
+  2. 85,523 tokens — filesystem: 132 repeat calls with identical arguments in the same session
+     → The agent re-fetched the same thing — usually a sign it lost the earlier result.
+  3. 4,180 tokens — postgres: 33 failed calls
+     → Fix or remove postgres's failing calls — each one costs context and a retry too.
+```
+
+Look at those first two numbers together: **$21.81 of that $24.70 monthly bill is tool
+definitions** — the cost of merely having servers configured, before your agent does a
+single useful thing. And the largest one has never been called.
+
+That's the point of the whole tool. Not "here is a dashboard, go find something," but
+*delete this one line from your config and stop paying 10,762 tokens every session for a
+server you have never once used.*
+
+The projection uses **your** observed startup rate from **your** recording — it isn't a
+guess, and it doesn't appear at all until there's enough history to be honest about.
 
 (Install once with `npm i -g @sreelal727/mcpwatch` and every command is just `mcpwatch …`.)
 
-### The four tools your agent gets
+## Your agent can read the bill too
+
+`init` also registers mcpwatch as an MCP server, so your agent gets these tools with no
+extra setup:
 
 | Tool | The question it answers |
 |---|---|
+| `token_costs` | "What is my MCP setup costing me, and what should I remove?" |
 | `recent_failures` | "What just broke, with what arguments, and what did the server say?" |
 | `server_health` | "Is that server crashing, slow, hanging, or corrupting the protocol?" |
 | `find_calls` | "Has this tool ever worked? What arguments did I use last time?" |
 | `get_call` | "Show me the exact request and response JSON for call #412." |
 
-They're described so the agent knows *when* to reach for them — it calls
-`recent_failures` on its own after a failed tool call, without being asked.
+So you can just ask, in the client you already use:
 
-### Prefer the terminal? Never open a browser
+> **You:** my context keeps filling up, what's eating it?
+>
+> **Agent:** *(calls `token_costs`)* Your `github` server loads 46 tool definitions —
+> 10,762 tokens — into every session, and you haven't called it once in the last 30 days.
+> That's about 1.4M tokens over the window. Your filesystem server also re-read identical
+> files 132 times. Want me to take github out of your config?
 
-```
-mcpwatch doctor     # one-shot health report: what's erroring, crashing, hanging
-mcpwatch tail       # live one-line-per-call stream
-```
+The descriptions are written as trigger conditions, so the agent reaches for them on its
+own — `recent_failures` after a failed tool call, `token_costs` when you mention context
+or cost — instead of waiting to be told they exist.
 
-`doctor` is written to be read by a human *or* pasted to an agent — and `--json` makes
-it machine-readable for agents that only have shell access (Codex in a VS Code terminal,
-CI, hooks).
+## It also tells you what's broken
+
+The same recording answers the reliability questions, in one command:
 
 ```
 $ mcpwatch doctor
@@ -91,29 +123,23 @@ $ mcpwatch doctor
     slowest: run_query at 1.3s
 ✓ filesystem       7 calls, no errors, avg 54ms   last seen 36s ago
 
-2 failed MCP tool calls in the last 24h, newest first:
-
 [#14] 2s ago  database/does_not_exist  tool_error  (2ms)
     error: MCP error -32602: Tool does_not_exist not found
-    args:  {}
     session fd14d19f · full payloads: get_call(14)
 ```
 
-### And the dashboard, when you want to look yourself
-
-```
-npx @sreelal727/mcpwatch ui
-```
-
-Every session, every tool call, every request and response, with status and latency,
-live. All of it in a SQLite file in your home directory, served on `127.0.0.1`, never
-leaving your machine.
+`mcpwatch tail` streams calls live, one line each. Everything takes `--json`, so agents
+with only shell access (Codex in a VS Code terminal, hooks, CI) can read it too. And
+`mcpwatch ui` opens a local dashboard on `127.0.0.1` when you'd rather look yourself.
 
 ## What you get
 
-- **Agent-readable recording** — `recent_failures`, `server_health`, `find_calls`,
-  `get_call` as MCP tools, plus `doctor --json` and `tail --json` for agents that only
-  have a shell. Your agent stops guessing about its own tool calls.
+- **An itemised token bill** — `mcpwatch cost` prices every server's per-session tax,
+  projects it forward from your own usage, and ranks what to remove: unused servers,
+  bloated tool lists, oversized responses, repeated calls, failed calls.
+- **Agent-readable recording** — `token_costs`, `recent_failures`, `server_health`,
+  `find_calls`, `get_call` as MCP tools, plus `--json` on everything for agents that
+  only have a shell. Your agent stops guessing about its own tool calls.
 - **Live dashboard** — sessions stream in as your agent works: call timeline, status
   dots, latency bars, full request/response JSON inspection, filtering, dark/light.
 - **Every call recorded** — paired request/response with duration and status
@@ -157,6 +183,7 @@ otherwise every question the agent asked about the traffic would become more tra
 
 | | mcpwatch | MCP Inspector | mcpsnoop | SaaS agent observability |
 |---|---|---|---|---|
+| **Tells you what your setup costs in tokens** | ✅ `cost` | ❌ | ❌ | partial (spend, not per-server tax) |
 | **Your agent can query the recording** | ✅ **MCP tools** | ❌ | ❌ | ❌ |
 | Real sessions from your actual client | ✅ | ❌ manual dev tool | ✅ | ✅ |
 | Headless / terminal-only workflow | ✅ `doctor`, `tail` | ❌ | ✅ | ❌ |
@@ -176,6 +203,7 @@ add fleet features on their infrastructure.)
 | Command | What it does |
 |---|---|
 | `mcpwatch init [--dry-run]` | Instrument your clients **and** give your agent the mcpwatch tools (backups + reversible) |
+| `mcpwatch cost [--since 30d] [--rate N] [--json]` | Itemised token bill: per-session tax, monthly projection, ranked savings |
 | `mcpwatch doctor [--json]` | One-shot health report: erroring, crashing, hanging, slow, or protocol-corrupting servers |
 | `mcpwatch tail [--json]` | Follow calls live in the terminal, one line each |
 | `mcpwatch mcp` | Run mcpwatch as an MCP server (your client starts this; you normally won't) |
@@ -190,6 +218,23 @@ add fleet features on their infrastructure.)
 | `mcpwatch gc [--keep-days 30]` | Prune old sessions, compact the database |
 
 ## FAQ
+
+**How accurate are the token numbers?** They're estimated from the recorded byte counts
+at roughly 4 characters per token, not run through a real tokenizer — shipping one would
+mean a native dependency in a CLI people install globally. They're precise enough to
+rank what's expensive and to compare servers against each other, which is what you act
+on. Don't reconcile an invoice with them. The dollar figures apply a rate you can set
+with `--rate` (default $5 per million tokens), and the assumed rate is always printed.
+
+**Will this lower my hosting or database bill?** Not directly — mcpwatch is a local
+recorder, not infrastructure. What it does show is redundant work hitting your backends:
+repeated identical calls, oversized queries, retry loops. Fixing those cuts API quota
+and database load. But the honest headline is context tokens, and that's where the
+savings actually are.
+
+**Does the recording itself cost tokens?** No. Capture is a byte-level tee on your
+machine; nothing is added to any prompt. The agent tools only enter context when the
+agent actually calls one, and their answers are capped and summarised rather than dumped.
 
 **Overhead?** The proxy is a byte-level tee; parsing and storage happen on copies, off
 the protocol's critical path. If capture ever fails (full disk, whatever), it disables

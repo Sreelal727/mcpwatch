@@ -89,6 +89,25 @@ for humans and made the recording queryable by the agent itself:
 happened without the user opening anything. Covered end to end: real client → proxy →
 real server, then real client → `mcpwatch mcp` → that recording.
 
+### Phase 4.6 — The cost frame ✅ (v0.3.0)
+Repositioning again, and this one is the launch story. Debugging is episodic — you reach
+for it when something breaks. Cost is continuous: every MCP server injects its tool
+definitions into every session whether you use it or not, and nobody has ever seen that
+bill itemised. We were already recording the exact bytes.
+- ✅ `mcpwatch cost` — per-server per-session tax, traffic totals, and a monthly
+  projection extrapolated from the user's own observed startup rate (suppressed when
+  there is too little history to be honest).
+- ✅ Ranked, actionable waste: unused servers, bloated tool lists, oversized responses,
+  repeated identical calls, failed calls — each with the specific fix.
+- ✅ Reporting floors, so the output stays a short list of things worth doing.
+- ✅ `token_costs` MCP tool: the agent answers "why is my context filling up?" itself.
+- ✅ Token counts estimated from bytes (~4 chars/token) — no tokenizer dependency in a
+  globally installed CLI — and every surface says so.
+
+**Honesty guardrails:** we claim context-token savings, which is what the data supports.
+We do not claim to lower hosting or database bills; the FAQ says so explicitly and
+points at the real secondary benefit (redundant calls hitting your backends).
+
 ### Phase 5 — Beta & launch prep
 - 5–10 beta users from MCP Discord / r/mcp; fix what they hit.
 - Issue templates, CONTRIBUTING.md, seeded good-first-issues.

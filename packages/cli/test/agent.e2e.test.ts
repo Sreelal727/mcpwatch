@@ -91,6 +91,7 @@ describe("agent tools e2e", () => {
       "get_call",
       "recent_failures",
       "server_health",
+      "token_costs",
     ]);
     // Descriptions are the whole interface for an agent: they must say when to call.
     const failures = tools.find((t) => t.name === "recent_failures")!;
@@ -139,6 +140,15 @@ describe("agent tools e2e", () => {
     expect(text).toContain('"name":"boom"');
     expect(text).toContain("kaboom");
     expect(text).toContain('"isError":true');
+  });
+
+  it("token_costs prices the recorded session for the agent", async () => {
+    const text = await textOf(agent, "token_costs", { since: "1h" });
+    expect(text).toContain("tokens per session");
+    expect(text).toContain("fixture");
+    // The fixture server's three tools were loaded, so it has a real tax.
+    expect(text).toMatch(/3 tools/);
+    expect(text).toContain("estimated");
   });
 
   it("reports a bad call id as a tool error, not a protocol error", async () => {

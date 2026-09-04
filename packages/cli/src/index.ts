@@ -12,8 +12,9 @@ import {
   instrumentUnwrap,
 } from "./instrument/instrument.js";
 import { runAgentServer } from "./agent/mcpServer.js";
-import { formatOverview, ms as fmtMs } from "./agent/format.js";
+import { formatCost, formatOverview, ms as fmtMs } from "./agent/format.js";
 import { overview, parseSince } from "./query/insights.js";
+import { costReport } from "./query/cost.js";
 import { createHttpProxy } from "./proxy/httpProxy.js";
 import { Redactor } from "./proxy/redact.js";
 import { createUiServer } from "./server/ui.js";
@@ -29,6 +30,11 @@ Usage:
       each changed file. Restart your client afterwards.
       --dry-run only shows what would change; --no-agent-tools skips the
       agent-facing MCP server.
+
+  mcpwatch cost [--since 30d] [--rate <usd-per-million>] [--json] [--db <path>]
+      What your MCP setup costs in tokens: the per-session tax every server
+      charges just by being configured, the traffic on top of it, and a ranked
+      list of what to remove. Counts are estimated from recorded bytes.
 
   mcpwatch doctor [--since 24h] [--json] [--db <path>]
       One-shot health report: which MCP servers are erroring, crashing, slow,
@@ -356,6 +362,24 @@ function cmdDoctor(argv: string[]): void {
   process.stdout.write(formatOverview(report, window) + "\n");
 }
 
+const DEFAULT_RATE_PER_MILLION = 5;
+
+function cmdCost(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["db", "since", "rate"]));
+  const window = stringFlag(flags, "since") ?? "30d";
+  const rateFlag = Number(flags.get("rate"));
+  const rate = Number.isFinite(rateFlag) && rateFlag > 0 ? rateFlag : DEFAULT_RATE_PER_MILLION;
+  const store = openStore(flags);
+  const report = costReport(store, { sinceMs: parseSince(window) });
+  store.close();
+
+  if (flags.get("json") === true) {
+    process.stdout.write(JSON.stringify({ ...report, usd_per_million: rate }, null, 2) + "\n");
+    return;
+  }
+  process.stdout.write(formatCost(report, window, rate) + "\n");
+}
+
 function cmdTail(argv: string[]): void {
   const { flags } = parseFlags(argv, new Set(["db", "since"]));
   const json = flags.get("json") === true;
@@ -495,6 +519,8 @@ function main(): void {
       return cmdMcp(rest);
     case "doctor":
       return cmdDoctor(rest);
+    case "cost":
+      return cmdCost(rest);
     case "tail":
       return cmdTail(rest);
     case "connect":

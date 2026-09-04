@@ -70,6 +70,10 @@ const call = async (client: Client, name: string, args: Record<string, unknown>)
   await call(client, "search_docs", { query: "how do transactions work" });
   await call(client, "write_file", { path: "src/fix.ts", contents: "export {}" });
   await call(client, "read_file", { path: "package.json" });
+  // The most common duplicate of all: re-reading a file it already has.
+  await call(client, "read_file", { path: "src/index.ts" });
+  await call(client, "search_docs", { query: "how do transactions work" });
+  await call(client, "read_file", { path: "src/index.ts" });
   await client.close();
 }
 
@@ -99,6 +103,27 @@ const call = async (client: Client, name: string, args: Record<string, unknown>)
   await call(client, "fetch_url", { url: "https://example.com/pricing" });
   await call(client, "fetch_url", { url: "https://example.com/docs/api" });
   await call(client, "search_docs", { query: "rate limits" });
+  await client.close();
+}
+
+// Session 4: a big vendor integration server, configured and never used.
+// Its 40 tool definitions are injected into every session regardless.
+{
+  const client = await connect("github", { DEMO_BLOAT: "40" });
+  await client.listTools();
+  await client.close();
+}
+
+// Session 5: the two cheap habits that quietly cost the most — asking for the
+// same thing twice, and pulling far more data than the question needed.
+{
+  const client = await connect("analytics");
+  await client.listTools();
+  // An agent that lost the earlier result asks the same question four times.
+  for (let i = 0; i < 4; i++) {
+    await call(client, "run_query", { sql: "SELECT count(*) FROM signups WHERE week = 12" });
+  }
+  await call(client, "dump_table", { table: "customers" });
   await client.close();
 }
 

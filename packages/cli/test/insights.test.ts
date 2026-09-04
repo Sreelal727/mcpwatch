@@ -220,7 +220,7 @@ describe("insights over a recorded database", () => {
 
   it("the agent server answers tools/list and tools/call over JSON-RPC", () => {
     const list = handleRequest(store, { id: 1, method: "tools/list" }, "test").response!;
-    expect((list.result as { tools: unknown[] }).tools).toHaveLength(4);
+    expect((list.result as { tools: unknown[] }).tools).toHaveLength(5);
 
     const called = handleRequest(
       store,
