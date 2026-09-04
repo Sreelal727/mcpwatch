@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.sreelal727/mcpwatch",
+  "title": "mcpwatch",
+  "description": "Records MCP tool calls and itemises the token cost each server adds to your context.",
+  "repository": {
+    "url": "https://github.com/Sreelal727/mcpwatch",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/Sreelal727/mcpwatch#readme",
+  "version": "0.4.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@sreelal727/mcpwatch",
+      "version": "0.4.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
