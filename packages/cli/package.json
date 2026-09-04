@@ -6,6 +6,7 @@
     "access": "public"
   },
   "description": "See what your MCP servers cost you in tokens — and cut it. Records every MCP tool call, itemises the per-session tax each server charges, and tells your coding agent what to remove. All local, zero config.",
+  "author": "Sreelal (https://github.com/Sreelal727)",
   "license": "MIT",
   "type": "module",
   "repository": {
