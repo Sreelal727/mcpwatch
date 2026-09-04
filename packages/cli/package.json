@@ -1,7 +1,7 @@
 {
   "name": "@sreelal727/mcpwatch",
-  "version": "0.4.0",
-  "mcpName": "io.github.sreelal727/mcpwatch",
+  "version": "0.4.1",
+  "mcpName": "io.github.Sreelal727/mcpwatch",
   "publishConfig": {
     "access": "public"
   },
