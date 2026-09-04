@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { auditServers, probeServer } from "../src/audit/audit.js";
 import { listConfiguredServers } from "../src/instrument/instrument.js";
@@ -50,10 +50,12 @@ describe("probeServer", () => {
   });
 
   it("survives a server that pollutes stdout before speaking protocol", async () => {
-    // Non-protocol stdout must not derail the handshake.
+    // Non-protocol stdout must not derail the handshake. The import specifier
+    // must be a file URL: a bare Windows path is not a valid one.
+    const target = JSON.stringify(pathToFileURL(fixtureServer).href);
     const probe = await probeServer({
       ...fixture(),
-      args: ["--import", "tsx", "-e", `console.log("starting up!"); await import(${JSON.stringify(fixtureServer)});`],
+      args: ["--import", "tsx", "-e", `console.log("starting up!"); await import(${target});`],
     });
     expect(probe.tools).toBe(3);
   });
