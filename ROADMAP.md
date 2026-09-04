@@ -108,6 +108,24 @@ bill itemised. We were already recording the exact bytes.
 We do not claim to lower hosting or database bills; the FAQ says so explicitly and
 points at the real secondary benefit (redundant calls hitting your backends).
 
+### Phase 4.7 — Ten seconds to a number ✅ (v0.4.0)
+The adoption bug: time-to-value was a *day*. `init` → restart client → work → `cost`.
+Nobody shares a tool before they have seen it do anything, and every step before the
+payoff loses people. But the most striking number — the per-session tax — needs no
+recording at all: it is just each server's tools/list response, which is exactly what a
+client loads on every start.
+- ✅ `mcpwatch audit` launches each configured server the way a client would, completes
+  the MCP handshake, measures the tool list, and shuts it down. No instrumentation, no
+  restart, no waiting.
+- ✅ Reads servers from existing client configs, peeling off any mcpwatch wrapping so it
+  measures the real server; skips remote servers and our own agent server.
+- ✅ Degrades honestly: a server that fails to start, hangs, or logs to stdout is
+  reported and the audit continues.
+- ✅ Names the single biggest line item when one dominates, because that is the action.
+
+**Why this matters more than a launch post:** it makes the first run produce a
+screenshot-worthy number, which is the part that actually travels.
+
 ### Phase 5 — Beta & launch prep
 - 5–10 beta users from MCP Discord / r/mcp; fix what they hit.
 - Issue templates, CONTRIBUTING.md, seeded good-first-issues.

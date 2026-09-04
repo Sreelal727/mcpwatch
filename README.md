@@ -34,16 +34,41 @@ row, calls that fail and get retried, and agents re-fetching things they already
 None of it shows up anywhere. mcpwatch records the actual bytes on the wire and turns
 them into an itemised bill.
 
-## Quick start
+## See your number in ten seconds
+
+No setup, no restart, no waiting. This starts each MCP server you already have
+configured, asks it for its tool list the way your client does, measures it, and shuts
+it down:
 
 ```
-npx @sreelal727/mcpwatch init
+npx @sreelal727/mcpwatch audit
 ```
 
-Restart your client, work normally for a day, then:
+```
+Every new session pays ~9,262 tokens ($0.05) to load these tool definitions,
+before you type a word:
+
+  github         8,825 tokens   52 tools   95%   Cursor
+  filesystem       437 tokens    6 tools    5%   Cursor
+                 9,262 tokens  every session
+
+At 10 sessions a day that is ~2,778,600 tokens a month ($13.89 at $5/M) spent
+before any work happens.
+
+"github" alone is 95% of that. If you do not use it in every project, moving it to
+the projects that need it is the single biggest win available to you.
+```
+
+That's the fixed cost, and it's knowable without recording anything.
+
+## Then find out what you actually use
+
+Which of those tools you *call* does need real traffic. Instrument once, work normally
+for a day, and ask:
 
 ```
-npx @sreelal727/mcpwatch cost
+npx @sreelal727/mcpwatch init     # then restart your client
+npx @sreelal727/mcpwatch cost     # a day later
 ```
 
 ```
@@ -134,6 +159,8 @@ with only shell access (Codex in a VS Code terminal, hooks, CI) can read it too.
 
 ## What you get
 
+- **A number in ten seconds** — `mcpwatch audit` prices your configured servers with no
+  instrumentation, no client restart, and no waiting for traffic.
 - **An itemised token bill** — `mcpwatch cost` prices every server's per-session tax,
   projects it forward from your own usage, and ranks what to remove: unused servers,
   bloated tool lists, oversized responses, repeated calls, failed calls.
@@ -202,6 +229,7 @@ add fleet features on their infrastructure.)
 
 | Command | What it does |
 |---|---|
+| `mcpwatch audit [--json]` | Measure the per-session cost of your configured servers **right now** — no setup |
 | `mcpwatch init [--dry-run]` | Instrument your clients **and** give your agent the mcpwatch tools (backups + reversible) |
 | `mcpwatch cost [--since 30d] [--rate N] [--json]` | Itemised token bill: per-session tax, monthly projection, ranked savings |
 | `mcpwatch doctor [--json]` | One-shot health report: erroring, crashing, hanging, slow, or protocol-corrupting servers |

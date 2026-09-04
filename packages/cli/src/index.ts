@@ -12,7 +12,8 @@ import {
   instrumentUnwrap,
 } from "./instrument/instrument.js";
 import { runAgentServer } from "./agent/mcpServer.js";
-import { formatCost, formatOverview, ms as fmtMs } from "./agent/format.js";
+import { formatAudit, formatCost, formatOverview, ms as fmtMs } from "./agent/format.js";
+import { auditServers } from "./audit/audit.js";
 import { overview, parseSince } from "./query/insights.js";
 import { costReport } from "./query/cost.js";
 import { createHttpProxy } from "./proxy/httpProxy.js";
@@ -22,6 +23,11 @@ import { createUiServer } from "./server/ui.js";
 const HELP = `mcpwatch — flight recorder for AI agents (https://github.com/Sreelal727/mcpwatch)
 
 Usage:
+  mcpwatch audit [--rate <usd-per-million>] [--sessions-per-day <n>] [--json]
+      Measure what your configured MCP servers cost per session, right now —
+      no setup, no restart, no waiting. Starts each server the way your client
+      would, asks for its tool list, measures it, and shuts it down.
+
   mcpwatch init [--dry-run] [--no-agent-tools]
       Instrument your MCP clients (Claude Desktop, Cursor, this project's
       .mcp.json): every stdio server is wrapped to run through the recording
@@ -364,6 +370,36 @@ function cmdDoctor(argv: string[]): void {
 
 const DEFAULT_RATE_PER_MILLION = 5;
 
+function cmdAudit(argv: string[]): void {
+  const { flags } = parseFlags(argv, new Set(["rate", "sessions-per-day", "timeout"]));
+  const rateFlag = Number(flags.get("rate"));
+  const rate = Number.isFinite(rateFlag) && rateFlag > 0 ? rateFlag : DEFAULT_RATE_PER_MILLION;
+  const perDayFlag = Number(flags.get("sessions-per-day"));
+  const perDay = Number.isFinite(perDayFlag) && perDayFlag > 0 ? perDayFlag : 10;
+  const timeoutFlag = Number(flags.get("timeout"));
+  const json = flags.get("json") === true;
+
+  if (!json) process.stderr.write("Starting each configured MCP server to measure it…\n");
+
+  void auditServers({
+    timeoutMs: Number.isFinite(timeoutFlag) && timeoutFlag > 0 ? timeoutFlag * 1000 : undefined,
+    onResult: (r) => {
+      if (json) return;
+      const status = r.ok ? `${r.tool_count} tools, ${r.definition_tokens} tokens` : (r.error ?? "failed");
+      process.stderr.write(`  ${r.ok ? "✓" : "·"} ${r.name}: ${status}\n`);
+    },
+  })
+    .then((results) => {
+      if (json) {
+        process.stdout.write(JSON.stringify({ servers: results, usd_per_million: rate }, null, 2) + "\n");
+        return;
+      }
+      process.stderr.write("\n");
+      process.stdout.write(formatAudit(results, rate, perDay) + "\n");
+    })
+    .catch((err: unknown) => fail(`audit failed: ${String(err)}`));
+}
+
 function cmdCost(argv: string[]): void {
   const { flags } = parseFlags(argv, new Set(["db", "since", "rate"]));
   const window = stringFlag(flags, "since") ?? "30d";
@@ -521,6 +557,8 @@ function main(): void {
       return cmdDoctor(rest);
     case "cost":
       return cmdCost(rest);
+    case "audit":
+      return cmdAudit(rest);
     case "tail":
       return cmdTail(rest);
     case "connect":

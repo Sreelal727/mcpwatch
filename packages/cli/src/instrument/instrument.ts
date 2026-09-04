@@ -320,6 +320,72 @@ export function instrumentUnwrap(options: { statePath?: string } = {}): UnwrapRe
   return reports;
 }
 
+export interface ConfiguredServer {
+  client: string;
+  file: string;
+  name: string;
+  /** The real server command, with any mcpwatch wrapping peeled off. */
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  /** Remote servers have no local command to launch. */
+  remote: boolean;
+}
+
+/**
+ * Every stdio server a client would start, as it would really start it.
+ *
+ * Wrapped entries are reported by their original command: callers want to
+ * measure the server itself, not our proxy around it. mcpwatch's own agent
+ * server is left out — it is ours, not part of the user's setup.
+ */
+export function listConfiguredServers(
+  home: string = os.homedir(),
+  cwd: string = process.cwd(),
+): ConfiguredServer[] {
+  const out: ConfiguredServer[] = [];
+  for (const { client, file } of knownClientConfigs(home, cwd)) {
+    let config: ConfigFile;
+    try {
+      config = JSON.parse(fs.readFileSync(file, "utf8")) as ConfigFile;
+    } catch {
+      continue;
+    }
+    const servers = config.mcpServers;
+    if (typeof servers !== "object" || servers === null) continue;
+
+    for (const [name, entry] of Object.entries(servers)) {
+      if (typeof entry !== "object" || entry === null) continue;
+      if (isAgentServer(entry)) continue;
+
+      const rawEnv = typeof entry.env === "object" && entry.env !== null ? entry.env : {};
+      const env: Record<string, string> = {};
+      for (const [key, value] of Object.entries(rawEnv as Record<string, unknown>)) {
+        if (key === WRAP_MARKER || key === AGENT_MARKER) continue;
+        if (typeof value === "string") env[key] = value;
+      }
+
+      if (isRemote(entry)) {
+        out.push({ client, file, name, command: "", args: [], env, remote: true });
+        continue;
+      }
+
+      let command = String(entry.command);
+      let args = Array.isArray(entry.args) ? entry.args.map(String) : [];
+      if (isWrapped(entry)) {
+        // node <mcpwatch> run --name X -- <real command> [args...]
+        const sep = args.indexOf("--");
+        if (sep !== -1 && sep + 1 < args.length) {
+          command = args[sep + 1]!;
+          args = args.slice(sep + 2);
+        }
+      }
+      out.push({ client, file, name, command, args, env, remote: false });
+    }
+  }
+  return out;
+}
+
 /**
  * Paste-ready ways to give an agent the mcpwatch tools when we can't edit a
  * config ourselves — Claude Code and Codex keep MCP servers in places that are

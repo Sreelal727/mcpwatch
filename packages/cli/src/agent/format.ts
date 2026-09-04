@@ -199,6 +199,87 @@ export function formatCost(report: CostReport, window: string, ratePerMillion: n
   return out.join("\n");
 }
 
+/**
+ * The instant audit. This is most people's first contact with mcpwatch, so it
+ * has to land a real number and then say exactly what to do next.
+ */
+export function formatAudit(
+  results: Array<{
+    name: string;
+    client: string;
+    ok: boolean;
+    definition_tokens: number;
+    tool_count: number;
+    startup_ms: number;
+    remote: boolean;
+    error?: string;
+  }>,
+  ratePerMillion: number,
+  sessionsPerDay = 10,
+): string {
+  if (results.length === 0) {
+    return (
+      "No MCP servers found in any known client config (Claude Desktop, Cursor, ./.mcp.json).\n\n" +
+      "If your client keeps its servers elsewhere, run `mcpwatch connect` for setup, or point\n" +
+      "mcpwatch at a project by running it in that directory."
+    );
+  }
+
+  const measured = results.filter((r) => r.ok).sort((a, b) => b.definition_tokens - a.definition_tokens);
+  const skipped = results.filter((r) => !r.ok);
+  const total = measured.reduce((sum, r) => sum + r.definition_tokens, 0);
+  const out: string[] = [];
+
+  if (measured.length > 0) {
+    out.push(
+      `Every new session pays ~${n(total)} tokens (${usd(total, ratePerMillion)}) to load these ` +
+        `tool definitions, before you type a word:`,
+      "",
+    );
+    const width = Math.max(...measured.map((r) => r.name.length), 8);
+    for (const r of measured) {
+      const share = total === 0 ? 0 : Math.round((r.definition_tokens / total) * 100);
+      out.push(
+        `  ${r.name.padEnd(width)}  ${n(r.definition_tokens).padStart(8)} tokens  ` +
+          `${String(r.tool_count).padStart(3)} tools  ${String(share).padStart(3)}%   ${r.client}`,
+      );
+    }
+    out.push(`  ${"".padEnd(width)}  ${n(total).padStart(8)} tokens  every session`);
+
+    const monthly = total * sessionsPerDay * 30;
+    out.push(
+      "",
+      `At ${sessionsPerDay} sessions a day that is ~${n(monthly)} tokens a month ` +
+        `(${usd(monthly, ratePerMillion)} at $${ratePerMillion}/M) spent before any work happens.`,
+    );
+
+    const biggest = measured[0]!;
+    if (measured.length > 1 && biggest.definition_tokens / total >= 0.4) {
+      out.push(
+        "",
+        `"${biggest.name}" alone is ${Math.round((biggest.definition_tokens / total) * 100)}% of that. ` +
+          `If you do not use it in every project, moving it to the projects that need it is the ` +
+          `single biggest win available to you.`,
+      );
+    }
+  }
+
+  if (skipped.length > 0) {
+    out.push("", "Not measured:");
+    for (const r of skipped) out.push(`  ${r.name} — ${r.error ?? "unknown error"}`);
+  }
+
+  out.push(
+    "",
+    "This is the fixed cost. To find out which of these tools you actually use — and what",
+    "is safe to remove — record a day of real traffic:",
+    "  mcpwatch init      then restart your client, work normally, and run: mcpwatch cost",
+    "",
+    COST_DISCLAIMER,
+  );
+  return out.join("\n");
+}
+
 /** The `doctor` report — same content for a human terminal and an agent. */
 export function formatOverview(o: Overview, window: string): string {
   if (o.servers.length === 0) return NO_DATA;
